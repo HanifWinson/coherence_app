@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Coherence
 
 Confidence-first AI triage for OCT retinal scans. Upload a batch, and it tells you which
@@ -104,3 +105,7 @@ research/              the model: notebook, analysis cells, and what the numbers
 1. `research/README.md` — what was tried, what broke, what the numbers support
 2. `src/lib/deidentify.ts` — the only part that is real rather than simulated
 3. The status table above — believe it, it is accurate
+=======
+# Coherence-App
+Confidence-first AI triage for OCT retinal scans. Upload a batch, and it tells you which scans a human actually needs to open.
+>>>>>>> e0e66ee91b935951fec1e8df0422b4e76fed4f19
