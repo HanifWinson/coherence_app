@@ -1,0 +1,7 @@
+/* Coherence — global reset only.
+   All component styling lives in the StyleBlock inside App.jsx, so this file
+   deliberately stays minimal. Do NOT add a colour scheme here: `color-scheme:
+   light dark` will fight the app's own palette in dark mode. */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { -webkit-font-smoothing: antialiased; background: #EDF1F4; }
