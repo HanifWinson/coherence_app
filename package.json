@@ -15,7 +15,8 @@
     "test": "tsx tests/test.ts && tsx tests/fp.ts && tsx tests/server.ts",
     "test:server": "tsx tests/server.ts",
     "test:fixtures": "cd tests && python3 make_fixtures.py",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "leads": "tsx server/leads.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

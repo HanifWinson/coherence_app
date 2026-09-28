@@ -249,3 +249,6 @@ __marimo__/
 # embedded PGlite database for local dev
 .data/
 .env
+
+# exported landing-page leads (personal contact details)
+gtm/leads.csv

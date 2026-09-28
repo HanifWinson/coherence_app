@@ -12,11 +12,13 @@ import {
   ACTIONS,
   ASSESSMENTS,
   DECISIONS,
+  PRICE_BANDS,
   SHAPES,
   auditLog,
   batches,
   cases,
   decisions,
+  interestSignups,
   practices,
   triageResults,
   users,
@@ -108,6 +110,25 @@ const memberBody = z
     path: ["ahpraNumber"],
   });
 
+const interestBody = z.strictObject({
+  practiceName: z.string().trim().min(2).max(160),
+  contactName: z.string().trim().min(1).max(120),
+  email: z.email().max(200),
+  role: z.enum(["practice_owner", "optometrist", "practice_manager", "other"]),
+  state: z.enum(["NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"]).nullable().optional(),
+  locations: z.number().int().min(1).max(500).nullable().optional(),
+  octVendor: z.string().trim().max(80).nullable().optional(),
+  scansPerWeek: z.enum(["under_25", "25_100", "100_250", "250_plus", "unsure"]).nullable().optional(),
+  priceBand: z.enum(PRICE_BANDS).nullable().optional(),
+  loi: z.boolean(),
+  pain: z.string().trim().max(2000).nullable().optional(),
+  source: z.string().trim().max(120).nullable().optional(),
+  /** Must be true - we only store contact details people agreed we can use. */
+  consent: z.literal(true),
+  /** Honeypot. Humans never see it; bots fill it in. */
+  website: z.string().max(0).optional(),
+});
+
 const auditBody = z.strictObject({
   action: z.string().trim().min(1).max(300),
   caseRef: CASE_ID.nullable().optional(),
@@ -164,6 +185,32 @@ export function createApp({ db, auth }: { db: Db; auth: Auth }) {
         .set({ practiceId, role: "admin", updatedAt: new Date() })
         .where(eq(users.id, user.id));
       await audit(tx, { id: user.id, practiceId, role: "admin" }, "Practice registered");
+    });
+    return c.json({ ok: true }, 201);
+  });
+
+  /** Landing-page LOI form. Public, so capped per client and honeypotted. */
+  const recentByClient = new Map<string, number[]>();
+  app.post("/interest", bodyLimit({ maxSize: 16 * 1024 }), async (c) => {
+    const client = c.req.header("x-forwarded-for")?.split(",")[0].trim() || "local";
+    const now = Date.now();
+    const recent = (recentByClient.get(client) ?? []).filter((t) => now - t < 60 * 60 * 1000);
+    if (recent.length >= 10) return c.json({ error: "Too many submissions - try again later" }, 429);
+    recentByClient.set(client, [...recent, now]);
+
+    const parsed = interestBody.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return bad(c, parsed.error);
+    const { consent: _consent, website: _website, ...b } = parsed.data;
+    await db.insert(interestSignups).values({
+      id: randomUUID(),
+      ...b,
+      state: b.state ?? null,
+      locations: b.locations ?? null,
+      octVendor: b.octVendor || null,
+      scansPerWeek: b.scansPerWeek ?? null,
+      priceBand: b.priceBand ?? null,
+      pain: b.pain || null,
+      source: b.source || null,
     });
     return c.json({ ok: true }, 201);
   });

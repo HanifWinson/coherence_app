@@ -173,6 +173,26 @@ const scan = (caseId: string, decision: "cleared" | "rescan" | "review", extra =
   check("same case ID is fine in another practice",
     (await post([scan("CFG-2345", "cleared")], revB.cookie)).status === 201);
 
+  console.log("\n=== landing-page LOIs ===");
+  const lead = {
+    practiceName: "Harbourside Eyecare", contactName: "Sam Lee", email: "sam@harbourside.test",
+    role: "practice_owner", state: "NSW", locations: 2, octVendor: "Spectralis",
+    scansPerWeek: "25_100", priceBand: "100_300", loi: true, pain: "backlog on Mondays",
+    source: "landing", consent: true,
+  };
+  check("LOI accepted without a session", (await call("POST", "/api/interest", lead)).status === 201);
+  check("LOI without consent rejected", (await call("POST", "/api/interest", { ...lead, consent: false })).status === 400);
+  check("honeypot-filled submission rejected", (await call("POST", "/api/interest", { ...lead, website: "spam.example" })).status === 400);
+  check("unknown field rejected", (await call("POST", "/api/interest", { ...lead, patientName: "x" })).status === 400);
+  const leads = await db.execute(sql`select practice_name, loi, price_band from interest_signups`);
+  const leadRows = (leads as unknown as { rows: Array<{ practice_name: string; loi: boolean; price_band: string }> }).rows;
+  check("LOI stored with price band", leadRows.length === 1 && leadRows[0].loi && leadRows[0].price_band === "100_300");
+  let limited = false;
+  for (let i = 0; i < 12 && !limited; i++) {
+    limited = (await call("POST", "/api/interest", lead)).status === 429;
+  }
+  check("public form is rate-limited", limited);
+
   await close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

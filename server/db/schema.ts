@@ -251,6 +251,39 @@ export const auditLog = pgTable(
 );
 
 /* ------------------------------------------------------------------ */
+/*  Pre-sell: landing-page LOIs (Build Club week 3)                   */
+/* ------------------------------------------------------------------ */
+
+export const PRICE_BANDS = ["under_100", "100_300", "300_600", "600_plus", "unsure"] as const;
+
+/**
+ * Prospective practices, from the public landing page. Business contact
+ * details only - no patient data ever comes through this form.
+ */
+export const interestSignups = pgTable(
+  "interest_signups",
+  {
+    id: text("id").primaryKey(),
+    practiceName: text("practice_name").notNull(),
+    contactName: text("contact_name").notNull(),
+    email: text("email").notNull(),
+    role: text("role").notNull(),
+    state: text("state"),
+    locations: integer("locations"),
+    octVendor: text("oct_vendor"),
+    scansPerWeek: text("scans_per_week"),
+    /** Monthly, per location, AUD - what they said they'd expect to pay. */
+    priceBand: text("price_band", { enum: PRICE_BANDS }),
+    /** Ticked the non-binding letter of intent. The Week 3 buying signal. */
+    loi: boolean("loi").notNull().default(false),
+    pain: text("pain"),
+    source: text("source"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("interest_signups_created_idx").on(t.createdAt)],
+);
+
+/* ------------------------------------------------------------------ */
 /*  Relations                                                         */
 /* ------------------------------------------------------------------ */
 

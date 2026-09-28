@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<title>Coherence — OCT triage pilot</title>
+<meta name="description" content="Coherence sorts every OCT scan into cleared, rescan or review, so your optometrists only open the ones that actually need a human." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --paper:#EDF1F4; --surface:#FFFFFF; --ink:#13222E; --dim:#51626E; --line:#D3DCE2;
+  --blue:#1A5FC8; --blue-ink:#0F3E86; --blue-soft:#E3ECFA;
+  --orange:#C25200; --orange-ink:#8F3D00; --amber:#8F6400; --amber-soft:#F7EFD8;
+  --ok:#1A6B3C; --warn:#A14400;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 'IBM Plex Sans',system-ui,sans-serif}
+.mono{font-family:'IBM Plex Mono',monospace}
+a{color:var(--blue-ink)}
+:focus-visible{outline:3px solid var(--blue);outline-offset:2px;border-radius:4px}
+.devbar{background:var(--ink);color:#F4D06F;text-align:center;font:600 13px/1.4 'IBM Plex Mono',monospace;letter-spacing:.06em;padding:8px 16px;text-transform:uppercase}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0}
+.brand{display:flex;align-items:center;gap:10px;font:800 22px 'Archivo',sans-serif;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
+.brand svg{color:var(--orange)}
+.btn{display:inline-block;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 22px;font:600 16px 'IBM Plex Sans',sans-serif;text-decoration:none;cursor:pointer}
+.btn:hover{background:var(--blue-ink)}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.hero{padding:48px 0 36px}
+.eyebrow{font:600 13px 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-ink);margin:0 0 12px}
+h1{font:700 clamp(32px,5vw,52px)/1.08 'Archivo',sans-serif;letter-spacing:-.025em;margin:0 0 18px;max-width:20ch}
+.lede{color:var(--dim);font-size:19px;max-width:58ch;margin:0 0 26px}
+section{padding:36px 0}
+h2{font:700 clamp(24px,3vw,32px)/1.15 'Archivo',sans-serif;letter-spacing:-.02em;margin:0 0 16px}
+.outcomes{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px}
+.card h3{display:flex;align-items:center;gap:8px;font:700 20px 'Archivo',sans-serif;margin:0 0 6px}
+.card p{margin:0;color:var(--dim);font-size:16px}
+.card .next{margin-top:10px;font:500 13.5px 'IBM Plex Mono',monospace;color:var(--ink)}
+.c-cleared{border-top:5px solid var(--blue)} .c-cleared h3{color:var(--blue-ink)}
+.c-rescan{border-top:5px dashed var(--amber)} .c-rescan h3{color:var(--amber)}
+.c-review{border-top:5px solid var(--orange)} .c-review h3{color:var(--orange-ink)}
+.privacy{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:14px;padding:22px 26px}
+.privacy ul{margin:10px 0 0;padding-left:20px;color:var(--dim)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.steps li{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;color:var(--dim)}
+.steps li::before{counter-increment:s;content:counter(s);display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--ink);color:#fff;font:600 14px 'IBM Plex Mono',monospace;margin-bottom:8px}
+.steps strong{display:block;color:var(--ink)}
+form{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px 28px;display:grid;grid-template-columns:1fr 1fr;gap:14px 18px}
+.full{grid-column:1/-1}
+@media(max-width:640px){form{grid-template-columns:1fr;padding:20px}}
+label{display:flex;flex-direction:column;gap:5px;font:600 13px 'IBM Plex Mono',monospace;letter-spacing:.04em;text-transform:uppercase;color:var(--dim)}
+input,select,textarea{font:16px 'IBM Plex Sans',sans-serif;color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:9px;padding:10px 12px;text-transform:none;letter-spacing:0}
+textarea{resize:vertical;min-height:80px}
+.opt{font-weight:500;text-transform:none;letter-spacing:0}
+.check{flex-direction:row;align-items:flex-start;gap:10px;text-transform:none;letter-spacing:0;font:15px/1.5 'IBM Plex Sans',sans-serif;color:var(--ink);background:var(--paper);border-radius:10px;padding:12px 14px}
+.check input{width:20px;height:20px;margin-top:2px;accent-color:var(--blue);flex-shrink:0}
+.hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+.status{margin:0;font-weight:600}
+.status.ok{color:var(--ok)} .status.err{color:var(--warn)}
+.thanks{background:var(--surface);border:1px solid var(--line);border-left:6px solid var(--ok);border-radius:16px;padding:26px 28px}
+footer{border-top:1px solid var(--line);margin-top:30px;padding:22px 0 40px;color:var(--dim);font-size:14px}
+footer strong{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="devbar" role="note">In development · not yet available for clinical use · pilot waitlist open</div>
+<div class="wrap">
+  <header>
+    <a class="brand" href="#top" aria-label="Coherence">
+      <svg width="42" height="16" viewBox="0 0 42 16" aria-hidden="true"><path d="M2 13 H14 C17 13 18 3 21 3 C24 3 25 13 28 13 H40" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+      Coherence
+    </a>
+    <a class="btn" href="#pilot">Join the pilot</a>
+  </header>
+
+  <main id="top">
+    <div class="hero">
+      <p class="eyebrow">OCT triage for optometry practices</p>
+      <h1>Only open the scans that need a human.</h1>
+      <p class="lede">Coherence sorts every OCT scan into <strong>cleared</strong>, <strong>rescan</strong> or
+        <strong>review</strong> — so your optometrists spend their time on the scans that actually need them,
+        and bad captures get retaken while the patient is still in the chair.</p>
+      <a class="btn" href="#pilot">Register interest for the pilot</a>
+    </div>
+
+    <section aria-labelledby="how">
+      <h2 id="how">Three outcomes, decided by where the AI is unsure</h2>
+      <p class="lede">Most tools tell you what they detected. Coherence tells you how sure it is — and the shape
+        of that uncertainty decides what happens next.</p>
+      <div class="outcomes">
+        <div class="card c-cleared">
+          <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5.5"/></svg>Cleared</h3>
+          <p>The model agrees with itself across all its passes.</p>
+          <p class="next">→ no review · routine recall</p>
+        </div>
+        <div class="card c-rescan">
+          <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M3 8h3l2-3h8l2 3h3v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>Rescan</h3>
+          <p>Uncertainty is spread across the whole image — a capture problem, not a clinical one.</p>
+          <p class="next">→ retake before the patient leaves</p>
+        </div>
+        <div class="card c-review">
+          <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>Review</h3>
+          <p>The capture is fine, but one region is genuinely ambiguous.</p>
+          <p class="next">→ optometrist opens it; a heatmap marks where to look</p>
+        </div>
+      </div>
+    </section>
+
+    <section aria-labelledby="privacy">
+      <div class="privacy">
+        <h2 id="privacy">Patient details never leave your practice</h2>
+        <ul>
+          <li>Scans are de-identified <strong>in your browser</strong>, before anything is uploaded — names, IDs and dates of birth are stripped, and names burned into the image are masked.</li>
+          <li>Each scan gets a random case ID. Your practice keeps the mapping; we never receive it.</li>
+          <li>Scan images are deleted once the report is generated. We keep derived numbers only.</li>
+          <li>We do not use your uploads to train our models.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section aria-labelledby="pilot-steps">
+      <h2 id="pilot-steps">How the pilot works</h2>
+      <ol class="steps">
+        <li><strong>20-minute call</strong>We learn how OCT review works in your practice today.</li>
+        <li><strong>Demo on sample data</strong>See the report, the review screen and the disagree button.</li>
+        <li><strong>Pilot when ready</strong>You're first in line once Coherence is available for clinical use.</li>
+      </ol>
+    </section>
+
+    <section id="pilot" aria-labelledby="pilot-h">
+      <h2 id="pilot-h">Register interest</h2>
+      <p class="lede">Tell us about your practice. The letter of intent is optional and non-binding — it just
+        tells us you'd pilot Coherence once it's ready.</p>
+
+      <form id="loi" novalidate>
+        <label>Practice name<input name="practiceName" required autocomplete="organization" /></label>
+        <label>Your name<input name="contactName" required autocomplete="name" /></label>
+        <label>Work email<input name="email" type="email" required autocomplete="email" /></label>
+        <label>Your role
+          <select name="role" required>
+            <option value="practice_owner">Practice owner</option>
+            <option value="optometrist">Optometrist</option>
+            <option value="practice_manager">Practice manager</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <label>State <span class="opt">(optional)</span>
+          <select name="state">
+            <option value="">—</option>
+            <option>NSW</option><option>VIC</option><option>QLD</option><option>WA</option>
+            <option>SA</option><option>TAS</option><option>ACT</option><option>NT</option>
+          </select>
+        </label>
+        <label>Locations <span class="opt">(optional)</span><input name="locations" type="number" min="1" max="500" inputmode="numeric" /></label>
+        <label>OCT device <span class="opt">(optional)</span><input name="octVendor" placeholder="e.g. Spectralis, Cirrus, Topcon" /></label>
+        <label>OCT scans per week <span class="opt">(optional)</span>
+          <select name="scansPerWeek">
+            <option value="">—</option>
+            <option value="under_25">Under 25</option>
+            <option value="25_100">25–100</option>
+            <option value="100_250">100–250</option>
+            <option value="250_plus">250+</option>
+            <option value="unsure">Not sure</option>
+          </select>
+        </label>
+        <label class="full">What would you expect to pay, per location per month (AUD)? <span class="opt">(optional)</span>
+          <select name="priceBand">
+            <option value="">—</option>
+            <option value="under_100">Under $100</option>
+            <option value="100_300">$100–$300</option>
+            <option value="300_600">$300–$600</option>
+            <option value="600_plus">$600+</option>
+            <option value="unsure">Not sure yet</option>
+          </select>
+        </label>
+        <label class="full">What's the most annoying part of OCT review today? <span class="opt">(optional)</span>
+          <textarea name="pain" maxlength="2000"></textarea>
+        </label>
+        <label class="hp" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off" /></label>
+
+        <label class="check full">
+          <input type="checkbox" name="loi" />
+          <span><strong>Non-binding letter of intent.</strong> We're interested in piloting Coherence at our
+            practice once it's available. This doesn't commit us to buy anything, and any clinical use depends
+            on Coherence meeting the applicable TGA requirements.</span>
+        </label>
+        <label class="check full">
+          <input type="checkbox" name="consent" required />
+          <span>You can contact me about the pilot using these details. <em>(required)</em></span>
+        </label>
+
+        <p class="status full" id="status" role="status" aria-live="polite"></p>
+        <div class="full"><button class="btn" type="submit" id="submit">Send</button></div>
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    <strong>Triage aid, not a diagnosis.</strong> All clinical decisions remain with the practitioner.
+    Coherence is in development and is not available for clinical use.
+  </footer>
+</div>
+
+<script>
+const form = document.getElementById("loi");
+const statusEl = document.getElementById("status");
+const submit = document.getElementById("submit");
+const src = new URLSearchParams(location.search).get("src");
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  statusEl.className = "status full";
+  if (!form.checkValidity()) {
+    form.reportValidity();
+    return;
+  }
+  const f = new FormData(form);
+  const val = (k) => (f.get(k) || "").toString().trim() || null;
+  const body = {
+    practiceName: val("practiceName"),
+    contactName: val("contactName"),
+    email: val("email"),
+    role: val("role"),
+    state: val("state"),
+    locations: val("locations") ? Number(val("locations")) : null,
+    octVendor: val("octVendor"),
+    scansPerWeek: val("scansPerWeek"),
+    priceBand: val("priceBand"),
+    pain: val("pain"),
+    loi: f.get("loi") === "on",
+    consent: f.get("consent") === "on",
+    source: src ? `landing:${src.slice(0, 100)}` : "landing",
+  };
+  if (f.get("website")) body.website = f.get("website").toString();
+
+  submit.disabled = true;
+  statusEl.textContent = "Sending…";
+  try {
+    const res = await fetch("/api/interest", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => null);
+      throw new Error(res.status === 429 ? "Too many submissions from here — try again in an hour." : j?.error || `Error ${res.status}`);
+    }
+    const thanks = document.createElement("div");
+    thanks.className = "thanks";
+    thanks.setAttribute("role", "status");
+    thanks.innerHTML = body.loi
+      ? "<h2>Thank you — letter of intent received.</h2><p>We'll be in touch to book a 20-minute call.</p>"
+      : "<h2>Thanks — we've got your details.</h2><p>We'll be in touch about the pilot.</p>";
+    form.replaceWith(thanks);
+  } catch (err) {
+    statusEl.textContent = `Couldn't send: ${err.message}`;
+    statusEl.className = "status full err";
+    submit.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
