@@ -96,4 +96,18 @@ make("fixtures/burned_in.dcm", "OKAFOR^CHIDI", "WE-40184", "19540312", "M", "R",
      burn_in="OKAFOR, CHIDI", ann_tag=None)          # tag ABSENT but text present
 make("fixtures/annotated.dcm", "SMITH^JOHN",   "WE-40185", "19601122", "M", "L", 4,
      burn_in="SMITH, JOHN", ann_tag="YES")           # tag correctly set
+
+# Bulk set for tests/fp.ts: 60 clean scans (false-positive rate) and 30 with a
+# name burned in and NO tag (recall). The tag is absent on purpose - pixel
+# detection is the part being measured.
+SURNAMES = ["OKAFOR", "LI", "PAPADOPOULOS", "WILLIAMS", "TRAN", "SINGH",
+            "MACDONALD", "ROSSI", "KIM", "OCONNOR"]
+os.makedirs("fixtures/bulk", exist_ok=True)
+for i in range(60):
+    make(f"fixtures/bulk/clean_{i:02d}.dcm", "DOE^JANE", f"WE-5{i:04d}",
+         "19620101", "F", "R" if i % 2 else "L", 100 + i)
+for i in range(30):
+    who = f"{SURNAMES[i % len(SURNAMES)]}, PAT {i:02d}"
+    make(f"fixtures/bulk/burned_{i:02d}.dcm", "DOE^JOHN", f"WE-6{i:04d}",
+         "19550505", "M", "R" if i % 2 else "L", 200 + i, burn_in=who)
 print("done")

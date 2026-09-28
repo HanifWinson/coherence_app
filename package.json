@@ -4,24 +4,42 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n web,api -c blue,yellow \"vite\" \"tsx watch server/index.ts\"",
+    "dev:web": "vite",
+    "dev:api": "tsx watch server/index.ts",
+    "start:api": "tsx server/index.ts",
     "build": "vite build",
     "lint": "oxlint",
+    "typecheck": "tsc -p .",
     "preview": "vite preview",
-    "test": "tsx tests/test.ts && tsx tests/fp.ts",
-    "test:fixtures": "cd tests && python3 make_fixtures.py"
+    "test": "tsx tests/test.ts && tsx tests/fp.ts && tsx tests/server.ts",
+    "test:server": "tsx tests/server.ts",
+    "test:fixtures": "cd tests && python3 make_fixtures.py",
+    "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@hono/node-server": "^2.1.1",
+    "better-auth": "^1.7.6",
     "dcmjs": "^0.52.0",
+    "drizzle-orm": "^0.45.3",
+    "hono": "^4.13.10",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^10.0.5",
+    "drizzle-kit": "^0.31.11",
     "oxlint": "^1.79.0",
     "tsx": "^4.23.13",
+    "typescript": "^5.9.3",
     "vite": "^8.2.2"
   },
   "description": "Confidence-first AI triage for OCT retinal scans"

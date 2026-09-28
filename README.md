@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Coherence
 
 Confidence-first AI triage for OCT retinal scans. Upload a batch, and it tells you which
@@ -10,8 +9,14 @@ scans a human actually needs to open.
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env     # optional in dev; set BETTER_AUTH_SECRET before deploying
+npm run dev              # web on :5173, API on :8787 (Vite proxies /api)
 ```
+
+No database to install: without `DATABASE_URL` the API uses embedded Postgres (PGlite) in
+`.data/pglite`. Migrations in `drizzle/` run on start. Open http://localhost:5173 and
+**Register a practice** — you become its admin, then add reviewers and uploaders under
+*Members*.
 
 ## The three outcomes
 
@@ -30,11 +35,16 @@ Triage is by the **spatial shape** of the model's own uncertainty, not by what i
 | Upload → triage → report → review | built |
 | **Client-side DICOM de-identification** | **built and tested** (`src/lib/deidentify.ts`) |
 | Accessibility (blue/orange, icon + label, greyscale-legible) | built |
-| Disagree capture | built, in memory only |
-| Roles / AHPRA sign-off gate | UI only — dropdown, not authentication |
-| Audit log | in memory, lost on refresh |
+| Auth (Better Auth), practices, invite-only members | built — sign-up only via practice registration |
+| Roles / AHPRA sign-off gate | enforced server-side — reviewer + AHPRA **format** check; register lookup not built |
+| Persistence (Postgres / PGlite, Drizzle) | built — derived numbers + heatmaps only; schema has no patient/pixel columns |
+| Disagree capture | built, persisted (`decisions` table) |
+| Audit log | persisted, append-only (DB trigger rejects UPDATE/DELETE) |
+| History — search by case ID / date, reopen | built |
+| Auto-lock | 5 min idle; unlock needs the password |
+| Practice isolation | app-level scoping in every query; Postgres RLS **not yet** |
 | Triage engine | **MockEngine** — canned results, no model |
-| Persistence, deploy | not started |
+| Deploy | not started |
 
 `RealEngine` is stubbed. Keep `ENGINE_ENV = "mock"` and the mock banner visible until a
 model has been validated across vendors.
@@ -58,7 +68,7 @@ written back into the output file.
 
 ```bash
 npm run test:fixtures    # build DICOM fixtures (needs python3 + pydicom)
-npm run test             # 48 assertions + false-positive suite
+npm run test             # 48 assertions + false-positive suite + 43 API/DB checks
 ```
 
 Expected: `48 passed, 0 failed` and `0/60 false positives, 30/30 recall`.
@@ -94,8 +104,13 @@ Single dataset, single vendor, internal validation. Not clinical evidence.
 ```
 src/App.jsx            all screens + styling
 src/lib/deidentify.ts  client-side DICOM de-identification
+src/lib/api.js         fetch wrapper for the API
+server/                Hono API: auth, batches, decisions, audit, history
+server/db/schema.ts    PRD §8 schema - read the comments on what is absent
+drizzle/               SQL migrations (incl. the append-only audit trigger)
 tests/test.ts          correctness assertions
 tests/fp.ts            false-positive / recall rates
+tests/server.ts        API + DB: auth gating, privacy, sign-off gate, isolation
 tests/make_fixtures.py generates DICOM fixtures with real identifying tags
 research/              the model: notebook, analysis cells, and what the numbers mean
 ```
@@ -105,7 +120,3 @@ research/              the model: notebook, analysis cells, and what the numbers
 1. `research/README.md` — what was tried, what broke, what the numbers support
 2. `src/lib/deidentify.ts` — the only part that is real rather than simulated
 3. The status table above — believe it, it is accurate
-=======
-# Coherence-App
-Confidence-first AI triage for OCT retinal scans. Upload a batch, and it tells you which scans a human actually needs to open.
->>>>>>> e0e66ee91b935951fec1e8df0422b4e76fed4f19

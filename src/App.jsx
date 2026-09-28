@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { api, signIn, signOut } from "./lib/api";
 
 
 /* ════════════════════════════════════════════════════════════════
@@ -113,6 +114,7 @@ const REASONS = {
 };
 const MockEngine = {
   name: "mock",
+  version: "mock-0.1",
   analyze(meta) {
     return new Promise((res) => {
       const seed = hashStr(meta.name + meta.id);
@@ -144,6 +146,7 @@ const MockEngine = {
 };
 const RealEngine = {
   name: "real",
+  version: "real-unwired",
   async analyze() { throw new Error("RealEngine: POST /api/analyze not wired yet."); },
 };
 const getEngine = () => (ENGINE_ENV === "mock" ? MockEngine : RealEngine);
@@ -202,23 +205,92 @@ const Chip = ({ decision }) => {
   return <span className={`chip ${m.cls}`}><Icon d={m.icon} size={13} /> {m.label}</span>;
 };
 
+/* UI action labels <-> API action values */
+const ACTION_API = { agree: "agree", disagree: "disagree", "request rescan": "request_rescan", refer: "refer" };
+const ACTION_UI = { agree: "agree", disagree: "disagree", request_rescan: "request rescan", refer: "refer" };
+const ROLE_LABEL = { uploader: "Uploader", reviewer: "Reviewer", admin: "Admin" };
+
+const Brand = () => (
+  <div className="brand">
+    <span className="brand-mark" aria-hidden="true"><ShapeGlyph shape="focal" /></span>
+    <span className="brand-name">Coherence</span>
+    <span className="brand-tag">AI that knows what it doesn't know</span>
+  </div>
+);
+const Disclaimer = () => (
+  <footer className="disclaimer" role="note">
+    <Icon d={ICONS.shield} size={14} />
+    <strong>Triage aid. Not a diagnosis.</strong>&nbsp;All clinical decisions remain with the practitioner. &nbsp;·&nbsp; We do not use your uploads to train our models. &nbsp;·&nbsp; Reports go to the practitioner, never the patient.
+  </footer>
+);
+
 /* ════════════════════════ APP ════════════════════════ */
 export default function Coherence() {
+  // loading | signedOut | error | ready
+  const [auth, setAuth] = useState({ status: "loading" });
+  const loadMe = useCallback(async () => {
+    try {
+      setAuth({ status: "ready", me: await api("/me") });
+    } catch (err) {
+      setAuth(err.status === 401 || err.status === 403
+        ? { status: "signedOut", notice: err.status === 403 ? err.message : null }
+        : { status: "error", error: err.message });
+    }
+  }, []);
+  useEffect(() => { loadMe(); }, [loadMe]);
+
+  if (auth.status === "ready") {
+    return <Workspace me={auth.me} onSignedOut={() => setAuth({ status: "signedOut" })} />;
+  }
+  return (
+    <div className="app">
+      <StyleBlock />
+      <header className="hdr"><Brand /></header>
+      <main className="main">
+        {auth.status === "loading" && <section className="screen center"><p className="dim">Loading…</p></section>}
+        {auth.status === "error" && (
+          <section className="screen center">
+            <div className="lockcard">
+              <Icon d={ICONS.warn} size={26} />
+              <h2>Can't reach the server</h2>
+              <p>{auth.error}</p>
+              <button className="primary" onClick={loadMe}>Try again</button>
+            </div>
+          </section>
+        )}
+        {auth.status === "signedOut" && <AuthScreen notice={auth.notice} onDone={loadMe} />}
+      </main>
+      <Disclaimer />
+    </div>
+  );
+}
+
+function Workspace({ me, onSignedOut }) {
   const engine = useMemo(getEngine, []);
-  const [stage, setStage] = useState("upload"); // upload | triage | report | review
+  const role = me.user.role;
+  const [stage, setStage] = useState("upload"); // upload | triage | report | review | history
   const [files, setFiles] = useState([]);       // {id, caseId, name, laterality, deid, burnedIn, masked, progress}
   const [results, setResults] = useState({});   // caseId -> TriageResult+
   const [current, setCurrent] = useState(null); // caseId under review
   const [triageNow, setTriageNow] = useState(null); // filename being analysed
-  const [role, setRole] = useState("reviewer");
-  const [audit, setAudit] = useState([]);
-  const [showAudit, setShowAudit] = useState(false);
+  const [panel, setPanel] = useState(null);     // null | "audit" | "members"
   const [locked, setLocked] = useState(false);
   const [disagreeFor, setDisagreeFor] = useState(null);
+  const [save, setSave] = useState({ status: "idle" }); // idle | saving | saved | error
+  const [reopened, setReopened] = useState(null); // batch meta when viewing history
+  const [agreePct, setAgreePct] = useState(null);
+  const payloadRef = useRef(null);
 
-  const log = useCallback((action, caseId = "—") => {
-    setAudit((a) => [{ t: new Date(), role, caseId, action }, ...a]);
-  }, [role]);
+  /* The server stamps who and when; the client only says what happened. */
+  const log = useCallback((action, caseId = null) => {
+    api("/audit", { method: "POST", body: { action, caseRef: caseId } })
+      .catch((err) => console.warn("audit write failed", err));
+  }, []);
+
+  const refreshAgreement = useCallback(() => {
+    api("/agreement").then((a) => setAgreePct(a.pct)).catch(() => {});
+  }, []);
+  useEffect(() => { refreshAgreement(); }, [refreshAgreement]);
 
   /* ----- auto-lock after 5 min idle (shared front-desk machines) ----- */
   const idleRef = useRef(null);
@@ -232,6 +304,11 @@ export default function Coherence() {
     return () => { clearTimeout(idleRef.current); ["pointerdown", "keydown", "pointermove"].forEach((e) => window.removeEventListener(e, reset)); };
   }, []);
 
+  const startNew = () => {
+    setFiles([]); setResults({}); setReopened(null); setSave({ status: "idle" });
+    setCurrent(null); setStage("upload");
+  };
+
   /* ----- intake: REAL de-identification, in the browser, before upload ----- */
   const intake = useCallback(async (fileList) => {
     const metas = fileList.map((file, i) => ({
@@ -243,6 +320,7 @@ export default function Coherence() {
       strippedCount: 0, ageYears: null, warnings: [],
       synthetic: false,
     }));
+    setResults({}); setReopened(null); setSave({ status: "idle" });
     setFiles(metas);
     log(`Batch received · ${metas.length} scan${metas.length > 1 ? "s" : ""} · de-identifying in browser`);
 
@@ -261,7 +339,7 @@ export default function Coherence() {
           burnedInSource: r.burnedInText.source,
           warnings: r.warnings, pixels: r.pixels, blob: r.blob,
         } : f));
-        if (!r.ok) log(`De-identification FAILED · ${m.name}`, r.caseId ?? "—");
+        if (!r.ok) log(`De-identification FAILED · ${m.name}`, r.caseId ?? null);
       } catch (err) {
         setFiles((fs) => fs.map((f) => f.id === m.id ? { ...f,
           deid: 1, ok: false,
@@ -273,6 +351,7 @@ export default function Coherence() {
 
   const onDrop = (e) => {
     e.preventDefault();
+    if (stage !== "upload") return;
     const fs = Array.from(e.dataTransfer?.files || []);
     if (fs.length) intake(fs);
   };
@@ -295,6 +374,7 @@ export default function Coherence() {
         strippedCount: 0, ageYears: null, warnings: [],
       };
     });
+    setResults({}); setReopened(null); setSave({ status: "idle" });
     setFiles(metas);
     log(`Sample batch loaded · ${metas.length} synthetic scans · NOT de-identified (no real files)`);
   };
@@ -302,6 +382,19 @@ export default function Coherence() {
   /* A file that failed de-identification must block the batch, not sail through. */
   const deidDone = files.length > 0 && files.every((f) => f.deid >= 1 && f.ok);
   const deidFailed = files.filter((f) => f.deid >= 1 && !f.ok);
+
+  /* ----- persist: derived numbers + heatmap only, never pixels ----- */
+  const postBatch = async () => {
+    setSave({ status: "saving" });
+    try {
+      const saved = await api("/batches", { method: "POST", body: payloadRef.current });
+      const refs = Object.fromEntries(saved.cases.map((c) => [c.caseId, c.id]));
+      setResults((rs) => Object.fromEntries(Object.entries(rs).map(([k, r]) => [k, { ...r, ref: refs[k] }])));
+      setSave({ status: "saved", batchId: saved.batchId });
+    } catch (err) {
+      setSave({ status: "error", error: err.message });
+    }
+  };
 
   /* ----- triage run ----- */
   const runTriage = async () => {
@@ -311,29 +404,90 @@ export default function Coherence() {
     for (const f of files) {
       setTriageNow(f.name);
       const r = await engine.analyze(f);
-      out[f.caseId] = { ...r, name: f.name, laterality: f.laterality, masked: f.masked, clinician: null };
+      out[f.caseId] = { ...r, name: f.name, laterality: f.laterality, masked: f.masked, synthetic: f.synthetic, clinician: null };
       setResults({ ...out });
     }
     setTriageNow(null);
+    // Retention rule: the de-identified pixels are dropped here. Nothing past
+    // this point holds the image, and the server never received it.
+    setFiles((fs) => fs.map(({ file: _file, pixels: _pixels, blob: _blob, ...f }) => f));
     setStage("report");
     log(`Triage complete · ${files.length} scans · pixel data deleted, derived numbers retained`);
+
+    payloadRef.current = {
+      engineVersion: engine.version,
+      cases: files.map((f) => {
+        const r = out[f.caseId];
+        return {
+          caseId: f.caseId,
+          laterality: f.laterality === "OD" || f.laterality === "OS" ? f.laterality : null,
+          ageYears: f.ageYears ?? null,
+          burnedInTextMasked: !!f.masked,
+          burnedInSource: f.burnedIn ? f.burnedInSource ?? null : null,
+          strippedTagCount: f.strippedCount ?? 0,
+          synthetic: !!f.synthetic,
+          result: {
+            decision: r.decision, uncertaintyShape: r.uncertaintyShape,
+            confidence: r.confidence, reason: r.reason,
+            uTotal: r.uTotal ?? null, topMass: r.topMass ?? null, blobShare: r.blobShare ?? null,
+            layerThicknessUm: r.layerThicknessUm, measurementUncertaintyUm: r.measurementUncertaintyUm,
+            heatmapUrl: r.heatmapUrl,
+          },
+        };
+      }),
+    };
+    await postBatch();
   };
 
-  /* ----- clinician actions ----- */
-  const record = (caseId, action, extra) => {
-    setResults((rs) => ({ ...rs, [caseId]: { ...rs[caseId], clinician: { action, ...extra, t: new Date() } } }));
-    log(`Sign-off: ${action}`, caseId);
+  /* ----- clinician actions (the server writes the audit entry) ----- */
+  const record = async (caseId, action, extra = {}) => {
+    const r = results[caseId];
+    if (!r.ref) throw new Error("This report isn't saved yet — sign-off needs a saved report.");
+    await api(`/cases/${r.ref}/decisions`, {
+      method: "POST",
+      body: { action: ACTION_API[action], clinicianAssessment: extra.said ?? null, reasonGiven: extra.why || null },
+    });
+    setResults((rs) => ({ ...rs, [caseId]: { ...rs[caseId], clinician: { action, ...extra, t: new Date(), by: me.user.name } } }));
+    refreshAgreement();
+  };
+
+  /* ----- history: reopen a saved report. Numbers + heatmap, no scan. ----- */
+  const openBatch = async (id) => {
+    const d = await api(`/batches/${id}`);
+    const rs = {};
+    for (const c of d.cases) {
+      const ld = c.latestDecision;
+      rs[c.caseId] = {
+        caseId: c.caseId, ref: c.id,
+        laterality: c.laterality ?? "—", masked: c.burnedInTextMasked, synthetic: c.synthetic,
+        confidence: c.result.confidence, uncertaintyShape: c.result.uncertaintyShape,
+        decision: c.result.decision, reason: c.result.reason,
+        heatmapUrl: c.result.heatmapUrl, scanUrl: null, prior: null,
+        layerThicknessUm: c.result.layerThicknessUm,
+        measurementUncertaintyUm: c.result.measurementUncertaintyUm,
+        clinician: ld ? { action: ACTION_UI[ld.action], said: ld.clinicianAssessment, why: ld.reasonGiven, t: new Date(ld.createdAt), by: ld.by } : null,
+      };
+    }
+    setFiles([]); setResults(rs);
+    setReopened({ createdAt: new Date(d.batch.createdAt), engineVersion: d.batch.engineVersion });
+    setSave({ status: "saved", batchId: id });
+    setStage("report");
+    log(`Report reopened · ${d.cases.length} cases`);
+  };
+
+  const doSignOut = async () => {
+    await signOut().catch(() => {});
+    onSignedOut();
   };
 
   const list = Object.values(results).sort((a, b) => a.confidence - b.confidence);
   const counts = {
-    received: files.length,
+    received: list.length,
     cleared: list.filter((r) => r.decision === "cleared").length,
     rescan: list.filter((r) => r.decision === "rescan").length,
     review: list.filter((r) => r.decision === "review").length,
   };
-  const decided = list.filter((r) => r.clinician && ["agree", "disagree"].includes(r.clinician.action));
-  const agreePct = decided.length ? Math.round(100 * decided.filter((r) => r.clinician.action === "agree").length / decided.length) : null;
+  const busy = stage === "triage";
 
   return (
     <div className="app" onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
@@ -342,24 +496,21 @@ export default function Coherence() {
         <div className="mockbar" role="status">MOCK ENGINE — canned results, no network. Not clinical data.</div>
       )}
       <header className="hdr">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true"><ShapeGlyph shape="focal" /></span>
-          <span className="brand-name">Coherence</span>
-          <span className="brand-tag">AI that knows what it doesn't know</span>
-        </div>
-        <div className="hdr-right">
-          <label className="rolewrap">
-            <span className="rolelabel">Signed in as</span>
-            <select value={role} onChange={(e) => { setRole(e.target.value); }} aria-label="Role (demo switcher — Clerk/Supabase Auth in production)">
-              <option value="uploader">Uploader · practice invite</option>
-              <option value="reviewer">Reviewer · AHPRA OPT0012345</option>
-              <option value="admin">Admin · practice account</option>
-            </select>
-          </label>
-          {role === "admin" && (
-            <button className="ghostbtn" onClick={() => setShowAudit((s) => !s)}>Audit log ({audit.length})</button>
-          )}
-        </div>
+        <Brand />
+        <nav className="hdr-right" aria-label="Main">
+          <button className={`navbtn ${stage !== "history" ? "on" : ""}`} disabled={busy} onClick={startNew}>New batch</button>
+          <button className={`navbtn ${stage === "history" ? "on" : ""}`} disabled={busy} onClick={() => setStage("history")}>History</button>
+          {role === "admin" && <>
+            <button className="ghostbtn" onClick={() => setPanel((p) => p === "members" ? null : "members")}>Members</button>
+            <button className="ghostbtn" onClick={() => setPanel((p) => p === "audit" ? null : "audit")}>Audit log</button>
+          </>}
+          <span className="whoami">
+            <span className="rolelabel">{me.practice?.name}</span>
+            <span><strong>{me.user.name}</strong> · {ROLE_LABEL[role]}</span>
+            {me.user.ahpraNumber && <span className="mono ahpra">{me.user.ahpraNumber}</span>}
+          </span>
+          <button className="ghostbtn" onClick={doSignOut}>Sign out</button>
+        </nav>
       </header>
 
       <main className="main">
@@ -369,37 +520,118 @@ export default function Coherence() {
         )}
         {stage === "triage" && <TriageScreen now={triageNow} done={Object.keys(results).length} total={files.length} />}
         {stage === "report" && (
-          <ReportScreen counts={counts} list={list} agreePct={agreePct}
+          <ReportScreen counts={counts} list={list} agreePct={agreePct} save={save}
+            reopened={reopened} onRetrySave={postBatch}
             onOpen={(id) => { setCurrent(id); setStage("review"); log("Case opened", id); }} />
         )}
         {stage === "review" && current && (
-          <ReviewScreen r={results[current]} role={role}
+          <ReviewScreen r={results[current]} canSign={me.canSignOff}
             onBack={() => setStage("report")}
-            onAction={(a) => a === "disagree" ? setDisagreeFor(current) : record(current, a, {})} />
+            onAction={(a) => a === "disagree" ? setDisagreeFor(current) : record(current, a)} />
         )}
+        {stage === "history" && <HistoryScreen onOpen={openBatch} />}
       </main>
 
-      {showAudit && <AuditPanel audit={audit} onClose={() => setShowAudit(false)} />}
+      {panel === "audit" && <AuditPanel onClose={() => setPanel(null)} />}
+      {panel === "members" && <MembersPanel onClose={() => setPanel(null)} />}
       {disagreeFor && (
         <DisagreeModal r={results[disagreeFor]}
-          onSave={(said, why) => { record(disagreeFor, "disagree", { said, why }); setDisagreeFor(null); }}
+          onSave={async (said, why) => { await record(disagreeFor, "disagree", { said, why }); setDisagreeFor(null); }}
           onCancel={() => setDisagreeFor(null)} />
       )}
       {locked && (
-        <div className="lock" role="dialog" aria-modal="true" aria-label="Session locked">
-          <div className="lockcard">
-            <Icon d={ICONS.lock} size={26} />
-            <h2>Session locked</h2>
-            <p>Locked after 5 minutes of inactivity. Shared machines stay safe.</p>
-            <button className="primary" onClick={() => { setLocked(false); log("Session unlocked"); }}>Unlock</button>
-          </div>
-        </div>
+        <LockScreen email={me.user.email} name={me.user.name}
+          onUnlocked={() => { setLocked(false); log("Session unlocked"); }}
+          onSignOut={doSignOut} />
       )}
 
-      <footer className="disclaimer" role="note">
-        <Icon d={ICONS.shield} size={14} />
-        <strong>Triage aid. Not a diagnosis.</strong>&nbsp;All clinical decisions remain with the practitioner. &nbsp;·&nbsp; We do not use your uploads to train our models. &nbsp;·&nbsp; Reports go to the practitioner, never the patient.
-      </footer>
+      <Disclaimer />
+    </div>
+  );
+}
+
+/* ════════════════ Sign in / register a practice ════════════════ */
+function AuthScreen({ notice, onDone }) {
+  const [mode, setMode] = useState("signin"); // signin | register
+  const [form, setForm] = useState({ practiceName: "", name: "", email: "", password: "" });
+  const [error, setError] = useState(notice);
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      if (mode === "register") await api("/register", { method: "POST", body: form });
+      await signIn(form.email, form.password);
+      await onDone();
+    } catch (err) {
+      setError(err.status === 401 ? "Email or password is incorrect." : err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="screen center">
+      <form className="authcard" onSubmit={submit}>
+        <p className="eyebrow">{mode === "signin" ? "Sign in" : "Register a practice"}</p>
+        <h1>{mode === "signin" ? "Welcome back" : "Set up your practice"}</h1>
+        {mode === "register" && <>
+          <label className="dlabel" htmlFor="practiceName">Practice name</label>
+          <input id="practiceName" required value={form.practiceName} onChange={set("practiceName")} autoComplete="organization" />
+          <label className="dlabel" htmlFor="name">Your name</label>
+          <input id="name" required value={form.name} onChange={set("name")} autoComplete="name" />
+        </>}
+        <label className="dlabel" htmlFor="email">Email</label>
+        <input id="email" type="email" required value={form.email} onChange={set("email")} autoComplete="email" />
+        <label className="dlabel" htmlFor="password">Password</label>
+        <input id="password" type="password" required minLength={10} value={form.password} onChange={set("password")}
+          autoComplete={mode === "signin" ? "current-password" : "new-password"} />
+        {error && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> {error}</p>}
+        <button className="primary big" disabled={busy}>{busy ? "…" : mode === "signin" ? "Sign in" : "Create practice account"}</button>
+        <p className="dim authswitch">
+          {mode === "signin"
+            ? <>New practice? <button type="button" className="linkbtn" onClick={() => { setMode("register"); setError(null); }}>Register it</button>. Staff accounts are created by your practice admin.</>
+            : <>Already registered? <button type="button" className="linkbtn" onClick={() => { setMode("signin"); setError(null); }}>Sign in</button>. You'll be the practice admin.</>}
+        </p>
+      </form>
+    </section>
+  );
+}
+
+/* Unlocking needs the password again: a shared front-desk machine must not
+   hand the session to whoever touches the mouse next. */
+function LockScreen({ email, name, onUnlocked, onSignOut }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const unlock = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(null);
+    try {
+      await signIn(email, password);
+      onUnlocked();
+    } catch (err) {
+      setError(err.status === 401 ? "Incorrect password." : err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="lock" role="dialog" aria-modal="true" aria-label="Session locked">
+      <form className="lockcard" onSubmit={unlock}>
+        <Icon d={ICONS.lock} size={26} />
+        <h2>Session locked</h2>
+        <p>Locked after 5 minutes of inactivity. Enter the password for <strong>{name}</strong> to continue.</p>
+        <input type="password" aria-label="Password" autoFocus required value={password}
+          onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        {error && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> {error}</p>}
+        <div className="modalbtns">
+          <button type="button" className="ghostbtn" onClick={onSignOut}>Sign out</button>
+          <button className="primary" disabled={busy}>Unlock</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -515,16 +747,21 @@ function TriageScreen({ now, done, total }) {
 }
 
 /* ════════════════ Screen 3 — Report ════════════════ */
-function ReportScreen({ counts, list, agreePct, onOpen }) {
+function ReportScreen({ counts, list, agreePct, save, reopened, onRetrySave, onOpen }) {
   const notOpened = counts.cleared;
   return (
     <section className="screen">
       <div className="hero small">
-        <p className="eyebrow">Report · read in five seconds</p>
+        <p className="eyebrow">
+          {reopened
+            ? `Saved report · ${reopened.createdAt.toLocaleString()} · engine ${reopened.engineVersion}`
+            : "Report · read in five seconds"}
+        </p>
         <h1><span className="heronum mono">{notOpened}</span> scan{notOpened !== 1 ? "s" : ""} you did not have to open</h1>
         <p className="lede">Cleared with high confidence — uncertainty confined to layer boundaries.
-          {agreePct !== null && <> &nbsp;·&nbsp; You've agreed with <strong>{agreePct}%</strong> of triage decisions this session.</>}</p>
+          {agreePct !== null && <> &nbsp;·&nbsp; You've agreed with <strong>{agreePct}%</strong> of triage decisions this month.</>}</p>
       </div>
+      {!reopened && <SaveStatus save={save} onRetry={onRetrySave} />}
       <div className="counters" role="group" aria-label="Batch summary">
         {[
           ["Received", counts.received, null],
@@ -547,7 +784,7 @@ function ReportScreen({ counts, list, agreePct, onOpen }) {
             <li key={r.caseId}>
               <button className={`wl-row ${r.clinician ? "signed" : ""}`} onClick={() => onOpen(r.caseId)}
                 aria-label={`Open case ${r.caseId}, ${r.decision}, confidence ${r.confidence}`}>
-                <span className="mono">{r.caseId}</span>
+                <span className="mono">{r.caseId}{r.synthetic && <span className="synthtag" title="Demo sample, not a real scan">SAMPLE</span>}</span>
                 <span className="latbadge">{r.laterality}</span>
                 <span className="confcell"><span className="mono">{r.confidence}</span><ConfBar v={r.confidence} /></span>
                 <span className={`shapecell s-${r.uncertaintyShape}`}><ShapeGlyph shape={r.uncertaintyShape} />
@@ -561,22 +798,43 @@ function ReportScreen({ counts, list, agreePct, onOpen }) {
           ))}
         </ul>
         <p className="dim wl-note">Sorted by confidence ascending — worst first. Pixel data was deleted when this
-          report was generated; only derived numbers are retained.</p>
+          report was generated; only derived numbers and uncertainty heatmaps are retained.</p>
       </div>
     </section>
   );
+}
+function SaveStatus({ save, onRetry }) {
+  if (save.status === "saving") return <p className="savestate dim" role="status">Saving report to history…</p>;
+  if (save.status === "saved") {
+    return <p className="savestate ok" role="status"><Icon d={ICONS.check} size={13} /> Saved to history — derived numbers and heatmaps only, no scans.</p>;
+  }
+  if (save.status === "error") {
+    return (
+      <p className="savestate warn" role="alert">
+        <Icon d={ICONS.warn} size={13} /> Not saved: {save.error}. Sign-off is disabled until the report is saved.
+        <button className="ghostbtn" onClick={onRetry}>Retry</button>
+      </p>
+    );
+  }
+  return null;
 }
 const ConfBar = ({ v }) => (
   <span className="confbar" aria-hidden="true"><span style={{ width: `${v}%` }} /></span>
 );
 
 /* ════════════════ Screen 4 — Review ════════════════ */
-function ReviewScreen({ r, role, onBack, onAction }) {
+function ReviewScreen({ r, canSign, onBack, onAction }) {
   const [opacity, setOpacity] = useState(0.7);
   const [overlay, setOverlay] = useState(true);
   const [view, setView] = useState({ s: 1, x: 0, y: 0 });
+  const [actionError, setActionError] = useState(null);
+  const [pending, setPending] = useState(false);
   const dragRef = useRef(null);
-  const canSign = role === "reviewer";
+  const saved = !!r.ref;
+  const act = async (a) => {
+    setActionError(null); setPending(true);
+    try { await onAction(a); } catch (err) { setActionError(err.message); } finally { setPending(false); }
+  };
 
   const onWheel = (e) => {
     e.preventDefault();
@@ -629,20 +887,28 @@ function ReviewScreen({ r, role, onBack, onAction }) {
 
       <div className="viewer">
         <figure className="panel">
-          <div className="panelimg" {...panelHandlers} style={panelStyle} role="img"
-            aria-label={overlay ? "B-scan with uncertainty overlay" : "B-scan"}>
-            <div className="panelinner" style={t}>
-              <img src={r.scanUrl} alt="" draggable={false} />
-              {overlay && <img src={r.heatmapUrl} alt="" draggable={false} style={{ opacity }} />}
+          {r.scanUrl ? (
+            <div className="panelimg" {...panelHandlers} style={panelStyle} role="img"
+              aria-label={overlay ? "B-scan with uncertainty overlay" : "B-scan"}>
+              <div className="panelinner" style={t}>
+                <img src={r.scanUrl} alt="" draggable={false} />
+                {overlay && <img src={r.heatmapUrl} alt="" draggable={false} style={{ opacity }} />}
+              </div>
             </div>
-          </div>
-          <figcaption>{overlay ? "B-scan · uncertainty overlay" : "B-scan"}</figcaption>
+          ) : (
+            /* Retention rule: the scan is gone by design. Say so, don't look broken. */
+            <div className="panelimg pixelsgone">
+              <p><Icon d={ICONS.shield} size={18} /><br /><strong>Scan pixels deleted</strong><br />
+                Removed when this report was generated. Only the uncertainty map and derived numbers are kept.</p>
+            </div>
+          )}
+          <figcaption>{!r.scanUrl ? "B-scan · not retained" : overlay ? "B-scan · uncertainty overlay" : "B-scan"}</figcaption>
         </figure>
         <figure className="panel">
           <div className="panelimg" {...panelHandlers} style={panelStyle} role="img"
             aria-label="Confidence map — orange marks where the passes disagree">
             <div className="panelinner" style={t}>
-              <img src={r.scanUrl} alt="" draggable={false} style={{ filter: "brightness(0.35)" }} />
+              {r.scanUrl && <img src={r.scanUrl} alt="" draggable={false} style={{ filter: "brightness(0.35)" }} />}
               <img src={r.heatmapUrl} alt="" draggable={false} style={{ opacity: Math.max(0.55, opacity) }} />
             </div>
           </div>
@@ -651,10 +917,10 @@ function ReviewScreen({ r, role, onBack, onAction }) {
       </div>
 
       <div className="viewctl" role="group" aria-label="View controls — these never alter the input or the model">
-        <label className="ctl">
+        {r.scanUrl && <label className="ctl">
           <input type="checkbox" checked={overlay} onChange={(e) => setOverlay(e.target.checked)} />
           Overlay on scan
-        </label>
+        </label>}
         <label className="ctl slider">
           Heatmap opacity
           <input type="range" min="0" max="1" step="0.05" value={opacity}
@@ -695,15 +961,18 @@ function ReviewScreen({ r, role, onBack, onAction }) {
 
       <div className="actions">
         {!canSign && <p className="gatenote"><Icon d={ICONS.lock} size={13} /> Sign-off requires a verified AHPRA registration (OPT…/MED…). Uploaders can view but not record clinical decisions.</p>}
+        {canSign && !saved && <p className="gatenote"><Icon d={ICONS.lock} size={13} /> This report isn't saved yet — sign-off unlocks once it is.</p>}
         <div className="actionbtns">
-          <button className="primary" disabled={!canSign} onClick={() => onAction("agree")}>Agree</button>
-          <button className="outline" disabled={!canSign} onClick={() => onAction("disagree")}>Disagree</button>
-          <button className="outline" disabled={!canSign} onClick={() => onAction("request rescan")}>Request rescan</button>
-          <button className="outline" disabled={!canSign} onClick={() => onAction("refer")}>Refer</button>
+          {[["agree", "Agree", "primary"], ["disagree", "Disagree", "outline"],
+            ["request rescan", "Request rescan", "outline"], ["refer", "Refer", "outline"]].map(([a, label, cls]) => (
+            <button key={a} className={cls} disabled={!canSign || !saved || pending} onClick={() => act(a)}>{label}</button>
+          ))}
         </div>
+        {actionError && <p className="warn signednote" role="alert"><Icon d={ICONS.warn} size={13} /> Not recorded: {actionError}</p>}
         {r.clinician && (
           <p className="ok signednote"><Icon d={ICONS.check} size={13} /> Recorded: <strong>{r.clinician.action}</strong>
-            {r.clinician.said && <> — your call: {r.clinician.said}</>} · {r.clinician.t.toLocaleTimeString()} · written to audit log</p>
+            {r.clinician.said && <> — assessment: {r.clinician.said}</>}
+            {r.clinician.by && <> · {r.clinician.by}</>} · {r.clinician.t.toLocaleString()} · written to audit log</p>
         )}
       </div>
     </section>
@@ -712,8 +981,16 @@ function ReviewScreen({ r, role, onBack, onAction }) {
 
 /* ════════════════ Disagree flow — the calibration dataset ════════════════ */
 function DisagreeModal({ r, onSave, onCancel }) {
-  const [said, setSaid] = useState("review");
+  // Default to something other than what the model said - a "disagreement"
+  // that repeats the model's call is noise in the calibration dataset.
+  const [said, setSaid] = useState(r.decision === "review" ? "cleared" : "review");
   const [why, setWhy] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setBusy(true); setError(null);
+    try { await onSave(said, why); } catch (err) { setError(err.message); setBusy(false); }
+  };
   return (
     <div className="modalwrap" role="dialog" aria-modal="true" aria-label="Record disagreement">
       <div className="modal">
@@ -737,9 +1014,10 @@ function DisagreeModal({ r, onSave, onCancel }) {
               placeholder="e.g. drusen at the flagged region look benign; uncertainty overstated" />
           </div>
         </div>
+        {error && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> Not saved: {error}</p>}
         <div className="modalbtns">
           <button className="ghostbtn" onClick={onCancel}>Cancel</button>
-          <button className="primary" onClick={() => onSave(said, why)}>Save disagreement</button>
+          <button className="primary" disabled={busy} onClick={submit}>Save disagreement</button>
         </div>
       </div>
     </div>
@@ -747,26 +1025,174 @@ function DisagreeModal({ r, onSave, onCancel }) {
 }
 
 /* ════════════════ Audit log (admin) ════════════════ */
-function AuditPanel({ audit, onClose }) {
+function AuditPanel({ onClose }) {
+  const [audit, setAudit] = useState(null);
+  const [error, setError] = useState(null);
+  const load = useCallback(() => {
+    api("/audit").then((d) => setAudit(d.entries)).catch((err) => setError(err.message));
+  }, []);
+  useEffect(() => { load(); }, [load]);
   return (
     <aside className="auditpanel" aria-label="Immutable audit log">
       <div className="audithead">
         <h2>Audit log</h2>
-        <button className="ghostbtn" onClick={onClose}>Close</button>
+        <span>
+          <button className="ghostbtn" onClick={load}>Refresh</button>{" "}
+          <button className="ghostbtn" onClick={onClose}>Close</button>
+        </span>
       </div>
-      <p className="dim">Append-only: who, what case, what action, when.</p>
+      <p className="dim">Append-only: who, what case, what action, when. The database refuses edits and deletes.</p>
+      {error && <p className="warn" role="alert">{error}</p>}
       <ul>
-        {audit.length === 0 && <li className="dim">No events yet — actions appear here as they happen.</li>}
-        {audit.map((e, i) => (
-          <li key={i} className="auditrow mono">
-            <span>{e.t.toLocaleTimeString()}</span>
-            <span className="arole">{e.role}</span>
-            <span>{e.caseId}</span>
+        {audit === null && !error && <li className="dim">Loading…</li>}
+        {audit?.length === 0 && <li className="dim">No events yet — actions appear here as they happen.</li>}
+        {audit?.map((e) => (
+          <li key={e.id} className="auditrow mono">
+            <span title={new Date(e.createdAt).toLocaleString()}>{new Date(e.createdAt).toLocaleTimeString()}</span>
+            <span className="arole" title={e.role}>{e.user}</span>
+            <span>{e.caseRef ?? "—"}</span>
             <span className="aaction">{e.action}</span>
           </li>
         ))}
       </ul>
     </aside>
+  );
+}
+
+/* ════════════════ Members (admin) ════════════════ */
+function MembersPanel({ onClose }) {
+  const empty = { name: "", email: "", password: "", role: "uploader", ahpraNumber: "" };
+  const [members, setMembers] = useState(null);
+  const [form, setForm] = useState(empty);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    api("/practice/members").then((d) => setMembers(d.members)).catch((err) => setMsg({ err: err.message }));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const add = async (e) => {
+    e.preventDefault();
+    setBusy(true); setMsg(null);
+    try {
+      await api("/practice/members", {
+        method: "POST",
+        body: { ...form, ahpraNumber: form.role === "reviewer" ? form.ahpraNumber : null },
+      });
+      setMsg({ ok: `${form.email} added. Give them their password in person.` });
+      setForm(empty);
+      load();
+    } catch (err) {
+      setMsg({ err: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <aside className="auditpanel" aria-label="Practice members">
+      <div className="audithead">
+        <h2>Members</h2>
+        <button className="ghostbtn" onClick={onClose}>Close</button>
+      </div>
+      <p className="dim">Uploaders can upload and see their own batches. Only reviewers with an AHPRA
+        registration can record clinical decisions.</p>
+      <ul>
+        {members?.map((m) => (
+          <li key={m.id} className="memberrow">
+            <strong>{m.name}</strong> <span className="dim">{m.email}</span><br />
+            <span className="mono">{ROLE_LABEL[m.role]}{m.ahpraNumber && ` · ${m.ahpraNumber}`}</span>
+            {m.role === "reviewer" && <span className="dim"> · {m.ahpraVerified ? "format checked" : "unverified"}</span>}
+          </li>
+        ))}
+      </ul>
+      <form className="memberform" onSubmit={add}>
+        <h3>Add a member</h3>
+        <label className="dlabel" htmlFor="m-name">Name</label>
+        <input id="m-name" required value={form.name} onChange={set("name")} />
+        <label className="dlabel" htmlFor="m-email">Email</label>
+        <input id="m-email" type="email" required value={form.email} onChange={set("email")} />
+        <label className="dlabel" htmlFor="m-pw">Initial password (10+ characters)</label>
+        <input id="m-pw" type="password" required minLength={10} value={form.password} onChange={set("password")} autoComplete="new-password" />
+        <label className="dlabel" htmlFor="m-role">Role</label>
+        <select id="m-role" value={form.role} onChange={set("role")}>
+          <option value="uploader">Uploader — upload only</option>
+          <option value="reviewer">Reviewer — records clinical decisions</option>
+        </select>
+        {form.role === "reviewer" && <>
+          <label className="dlabel" htmlFor="m-ahpra">AHPRA registration</label>
+          <input id="m-ahpra" required placeholder="OPT0001234567" value={form.ahpraNumber} onChange={set("ahpraNumber")} className="mono" />
+        </>}
+        {msg?.err && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> {msg.err}</p>}
+        {msg?.ok && <p className="ok" role="status"><Icon d={ICONS.check} size={13} /> {msg.ok}</p>}
+        <button className="primary" disabled={busy}>Add member</button>
+      </form>
+    </aside>
+  );
+}
+
+/* ════════════════ History — past reports ════════════════ */
+function HistoryScreen({ onOpen }) {
+  const [q, setQ] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState(null);
+
+  const search = useCallback(async (params) => {
+    setError(null);
+    try {
+      const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v));
+      setRows((await api(`/batches?${qs}`)).batches);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
+  useEffect(() => { search({}); }, [search]);
+
+  const open = async (id) => {
+    try { await onOpen(id); } catch (err) { setError(err.message); }
+  };
+
+  return (
+    <section className="screen">
+      <div className="hero small">
+        <p className="eyebrow">History</p>
+        <h1>Past reports</h1>
+        <p className="lede">Search by case ID or date. Patient names can't be searched — they were never stored.
+          Use your practice's own mapping to find a patient's case ID.</p>
+      </div>
+      <form className="histfilters" onSubmit={(e) => { e.preventDefault(); search({ q, from, to }); }}>
+        <label className="ctl">Case ID <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="CYW-6337" className="mono" /></label>
+        <label className="ctl">From <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
+        <label className="ctl">To <input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
+        <button className="primary">Search</button>
+      </form>
+      {error && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> {error}</p>}
+      <div className="worklist">
+        <div className="wl-head hist">
+          <span>Date</span><span>Scans</span><span>Cleared · Rescan · Review</span><span>Signed off</span><span>Uploaded by</span>
+        </div>
+        <ul aria-label="Past reports, newest first">
+          {rows === null && !error && <li className="dim wl-note">Loading…</li>}
+          {rows?.length === 0 && <li className="dim wl-note">No reports match.</li>}
+          {rows?.map((b) => (
+            <li key={b.id}>
+              <button className="wl-row hist" onClick={() => open(b.id)} aria-label={`Open report from ${new Date(b.createdAt).toLocaleString()}`}>
+                <span>{new Date(b.createdAt).toLocaleString()}{b.synthetic && <span className="synthtag">SAMPLE</span>}</span>
+                <span className="mono">{b.scanCount}</span>
+                <span className="mono">{b.clearedCount} · {b.rescanCount} · {b.reviewCount}</span>
+                <span className="mono">{b.signedCount} case{b.signedCount !== 1 ? "s" : ""}</span>
+                <span className="dim">{b.uploadedBy}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="dim wl-note">Reopened reports show derived numbers and the uncertainty map. Scan pixels were
+          deleted when each report was generated — that is deliberate.</p>
+      </div>
+    </section>
   );
 }
 
@@ -804,8 +1230,34 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .brand-name{font:800 22px 'Archivo',sans-serif;letter-spacing:-0.02em}
 .brand-tag{font-size:13px;color:var(--dim);font-style:italic}
 .hdr-right{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-.rolewrap{display:flex;align-items:center;gap:8px;font-size:13px}
 .rolelabel{color:var(--dim)}
+.navbtn{background:none;border:none;border-bottom:3px solid transparent;padding:6px 2px;font-weight:600;color:var(--dim)}
+.navbtn.on{color:var(--ink);border-bottom-color:var(--blue)}
+.navbtn:disabled{opacity:.5;cursor:not-allowed}
+.whoami{display:flex;flex-direction:column;font-size:13px;line-height:1.3;text-align:right}
+.whoami .rolelabel{font-size:12px}
+.ahpra{font-size:12px}
+input:not([type=checkbox]):not([type=range]){border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);font:inherit;font-size:15px;color:var(--ink)}
+.linkbtn{background:none;border:none;padding:0;color:var(--blue-ink);text-decoration:underline;font-weight:600}
+.authcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px 30px;width:min(440px,100%);display:flex;flex-direction:column;gap:6px}
+.authcard h1{font:700 28px 'Archivo',sans-serif;margin:0 0 10px}
+.authcard input{margin-bottom:8px}
+.authcard .primary{margin-top:8px}
+.authswitch{font-size:14px;margin:8px 0 0}
+.lockcard input{width:100%;margin-bottom:12px}
+.lockcard .modalbtns{justify-content:center}
+.savestate{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 4px;font-size:14px}
+.synthtag{font:600 10.5px 'IBM Plex Mono',monospace;background:var(--amber-soft);color:var(--amber);border:1px dashed var(--amber);border-radius:5px;padding:0 5px;margin-left:6px}
+.pixelsgone{display:flex;align-items:center;justify-content:center;text-align:center;color:#B9C6D0;font-size:14px;padding:18px}
+.pixelsgone p{margin:0;max-width:34ch}
+.pixelsgone strong{color:#fff}
+.histfilters{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:18px 0}
+.histfilters input{width:150px}
+.wl-head.hist,.wl-row.hist{grid-template-columns:200px 70px 190px 110px 1fr}
+.memberrow{padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.memberform{display:flex;flex-direction:column;gap:4px;margin-top:18px}
+.memberform h3{font:600 16px 'Archivo',sans-serif;margin:0 0 6px}
+.memberform input,.memberform select{margin-bottom:8px}
 select,textarea{border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);font:inherit;font-size:14px;color:var(--ink)}
 
 .main{flex:1;width:100%;max-width:1060px;margin:0 auto;padding:28px 24px}
@@ -873,7 +1325,7 @@ select,textarea{border:1.5px solid var(--line);border-radius:8px;padding:8px 10p
 .chip-review{background:var(--orange);color:#fff;border:1.5px solid var(--orange-ink)}
 
 .worklist{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.wl-head,.wl-row{display:grid;grid-template-columns:110px 52px 150px 130px 110px 1fr;gap:12px;align-items:center;padding:10px 18px}
+.wl-head,.wl-row{display:grid;grid-template-columns:160px 52px 150px 130px 110px 1fr;gap:12px;align-items:center;padding:10px 18px}
 .wl-head{font:600 11.5px 'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);border-bottom:1px solid var(--line)}
 .worklist ul{list-style:none;margin:0;padding:0}
 .wl-row{width:100%;text-align:left;background:none;border:none;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink)}
