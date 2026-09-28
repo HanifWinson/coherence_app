@@ -252,3 +252,6 @@ __marimo__/
 
 # exported landing-page leads (personal contact details)
 gtm/leads.csv
+
+# private notes, e.g. exported Claude conversations
+notes/
