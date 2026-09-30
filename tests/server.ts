@@ -4,9 +4,9 @@
  */
 import { sql } from "drizzle-orm";
 
-import { createApp } from "../server/app";
-import { createAuth } from "../server/auth";
-import { openDb } from "../server/db";
+import { createApp } from "../server/app.js";
+import { createAuth } from "../server/auth.js";
+import { openDb } from "../server/db/index.js";
 
 const ORIGIN = "http://coherence.test";
 let pass = 0, fail = 0;

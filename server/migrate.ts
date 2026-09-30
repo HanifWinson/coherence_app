@@ -11,7 +11,7 @@ try {
 
 export {};
 
-const { openDb } = await import("./db");
+const { openDb } = await import("./db/index.js");
 
 if (process.env.VERCEL && !process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set for this Vercel environment - add the Postgres integration first");

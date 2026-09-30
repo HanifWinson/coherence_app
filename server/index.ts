@@ -6,7 +6,7 @@ try {
   // no .env - fine in production, where the platform injects env vars
 }
 
-const { buildApp } = await import("./runtime");
+const { buildApp } = await import("./runtime.js");
 
 const app = await buildApp();
 const port = Number(process.env.PORT ?? 8787);

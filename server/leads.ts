@@ -13,8 +13,8 @@ try {
   // no .env
 }
 
-const { openDb } = await import("./db");
-const { interestSignups } = await import("./db/schema");
+const { openDb } = await import("./db/index.js");
+const { interestSignups } = await import("./db/schema.js");
 
 const { db, close } = await openDb();
 const rows = await db.select().from(interestSignups).orderBy(desc(interestSignups.createdAt));

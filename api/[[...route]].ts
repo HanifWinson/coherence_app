@@ -2,7 +2,7 @@
  * Vercel function: every /api/* request lands here and goes to the same Hono
  * app the local server runs. Built once per function instance.
  */
-import { buildApp } from "../server/runtime";
+import { buildApp } from "../server/runtime.js";
 
 const app = await buildApp({ serverless: true });
 const handle = (req: Request) => app.fetch(req);

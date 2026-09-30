@@ -4,8 +4,8 @@ import { betterAuth } from "better-auth";
 import { eq } from "drizzle-orm";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 
-import type { Db } from "./db";
-import { schema } from "./db";
+import type { Db } from "./db/index.js";
+import { schema } from "./db/index.js";
 
 /**
  * Better Auth, email + password. PRD §5: "do not build authentication".

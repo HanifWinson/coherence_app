@@ -6,8 +6,8 @@ import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 
-import { AHPRA_PATTERN, type Auth } from "./auth";
-import type { Db } from "./db";
+import { AHPRA_PATTERN, type Auth } from "./auth.js";
+import type { Db } from "./db/index.js";
 import {
   ACTIONS,
   ASSESSMENTS,
@@ -23,7 +23,7 @@ import {
   triageResults,
   users,
   type Role,
-} from "./db/schema";
+} from "./db/schema.js";
 
 type SessionUser = {
   id: string;

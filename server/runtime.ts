@@ -1,6 +1,6 @@
-import { createApp } from "./app";
-import { createAuth } from "./auth";
-import { openDb } from "./db";
+import { createApp } from "./app.js";
+import { createAuth } from "./auth.js";
+import { openDb } from "./db/index.js";
 
 /**
  * Environment checks and wiring shared by the long-running server (index.ts)
