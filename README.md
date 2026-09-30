@@ -18,6 +18,26 @@ No database to install: without `DATABASE_URL` the API uses embedded Postgres (P
 **Register a practice** — you become its admin, then add reviewers and uploaders under
 *Members*.
 
+## Deploy (Vercel)
+
+`vercel.json` deploys the app, the landing page and the API together, with functions in
+Sydney (`syd1`). `api/[[...route]].ts` runs the same Hono app as `server/index.ts`.
+
+1. Import the GitHub repo into Vercel.
+2. Add Postgres from the Vercel Marketplace (Neon), region **AWS Sydney (ap-southeast-2)**.
+   It sets `DATABASE_URL`; use the pooled string.
+3. Set `BETTER_AUTH_SECRET` (`openssl rand -base64 32`) and `BETTER_AUTH_URL` (the
+   production URL).
+4. Deploy. The build runs `npm run db:migrate` first, so a bad migration fails the deploy.
+
+URLs: `/` the app (sign-in) · `/landing` the pilot page · `/api/*` the API.
+
+Practice registration is **closed in production** unless `ALLOW_PRACTICE_REGISTRATION=true`.
+To create the first practice, set it to `true`, register, then remove it and redeploy.
+
+Serverless caveat: the landing form's rate limit is per function instance, so it is weaker
+on Vercel than locally.
+
 ## The three outcomes
 
 Triage is by the **spatial shape** of the model's own uncertainty, not by what it detected.

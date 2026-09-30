@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["server", "tests/server.ts", "drizzle.config.ts"]
+  "include": ["server", "api", "tests/server.ts", "drizzle.config.ts"]
 }

@@ -138,7 +138,16 @@ function bad(c: Context, error: z.ZodError) {
   return c.json({ error: "Invalid request", issues: z.flattenError(error).fieldErrors }, 400);
 }
 
-export function createApp({ db, auth }: { db: Db; auth: Auth }) {
+export function createApp({
+  db,
+  auth,
+  allowRegistration = true,
+}: {
+  db: Db;
+  auth: Auth;
+  /** Public practice sign-up. runtime.ts turns this off in production by default. */
+  allowRegistration?: boolean;
+}) {
   const app = new Hono<Env>().basePath("/api");
 
   const audit = (
@@ -168,7 +177,12 @@ export function createApp({ db, auth }: { db: Db; auth: Auth }) {
   app.on(["GET", "POST"], "/auth/*", (c) => auth.handler(c.req.raw));
 
   /** A new practice and its admin account. The only public account creation. */
+  app.get("/config", (c) => c.json({ registrationOpen: allowRegistration }));
+
   app.post("/register", async (c) => {
+    if (!allowRegistration) {
+      return c.json({ error: "Practice registration is by invitation during the pilot" }, 403);
+    }
     const parsed = registerBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return bad(c, parsed.error);
     const { practiceName, name, email, password } = parsed.data;

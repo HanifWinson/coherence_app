@@ -193,6 +193,20 @@ const scan = (caseId: string, decision: "cleared" | "rescan" | "review", extra =
   }
   check("public form is rate-limited", limited);
 
+  console.log("\n=== registration switch (production default) ===");
+  const closedApp = createApp({ db, auth: createAuth(db, { baseURL: ORIGIN, secret: "test-secret-".repeat(4) }), allowRegistration: false });
+  const closedReg = await closedApp.request(`${ORIGIN}/api/register`, {
+    method: "POST", headers: { "content-type": "application/json", origin: ORIGIN },
+    body: JSON.stringify({ practiceName: "Walk-in", name: "W", email: "w@walkin.co", password: PW }),
+  });
+  check("registration refused when closed", closedReg.status === 403);
+  const cfg = await (await closedApp.request(`${ORIGIN}/api/config`)).json();
+  check("config reports registration closed", cfg.registrationOpen === false);
+  check("LOI form still open when registration is closed", (await closedApp.request(`${ORIGIN}/api/interest`, {
+    method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, "x-forwarded-for": "10.9.9.9" },
+    body: JSON.stringify({ ...lead, email: "other@practice.test" }),
+  })).status === 201);
+
   await close();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

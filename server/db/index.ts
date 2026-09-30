@@ -1,13 +1,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { PGlite } from "@electric-sql/pglite";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
-import { migrate as migrateNodePg } from "drizzle-orm/node-postgres/migrator";
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { migrate as migratePglite } from "drizzle-orm/pglite/migrator";
-import pg from "pg";
 
 import * as schema from "./schema";
 
@@ -21,22 +15,33 @@ const MIGRATIONS = path.resolve(import.meta.dirname, "../../drizzle");
  * `DATABASE_URL` unset -> embedded PGlite on disk, so local dev needs no install.
  * `"memory"`           -> in-memory PGlite, for tests.
  *
- * Migrations run on open in every mode, so the schema can never drift from the
- * checked-in SQL in drizzle/.
+ * Migrations run on open unless `migrate: false`. Serverless (Vercel) passes
+ * false and runs `npm run db:migrate` at build time instead, so a cold start
+ * never races another instance to migrate.
+ *
+ * Drivers are imported lazily so the Vercel bundle never pulls in PGlite's wasm.
  */
 export async function openDb(
-  opts: { url?: string; dataDir?: string } = {},
+  opts: { url?: string; dataDir?: string; migrate?: boolean; poolMax?: number } = {},
 ): Promise<{ db: Db; close: () => Promise<void> }> {
   const url = opts.url ?? process.env.DATABASE_URL;
+  const runMigrations = opts.migrate ?? true;
 
   if (url && url !== "memory") {
-    const pool = new pg.Pool({ connectionString: url });
-    const db = drizzleNodePg(pool, { schema });
-    await migrateNodePg(db, { migrationsFolder: MIGRATIONS });
+    const { default: pg } = await import("pg");
+    const { drizzle } = await import("drizzle-orm/node-postgres");
+    const pool = new pg.Pool({ connectionString: url, max: opts.poolMax });
+    const db = drizzle(pool, { schema });
+    if (runMigrations) {
+      const { migrate } = await import("drizzle-orm/node-postgres/migrator");
+      await migrate(db, { migrationsFolder: MIGRATIONS });
+    }
     return { db: db as unknown as Db, close: () => pool.end() };
   }
 
-  let client: PGlite;
+  const { PGlite } = await import("@electric-sql/pglite");
+  const { drizzle } = await import("drizzle-orm/pglite");
+  let client: InstanceType<typeof PGlite>;
   if (url === "memory") {
     client = new PGlite();
   } else {
@@ -44,7 +49,10 @@ export async function openDb(
     mkdirSync(path.dirname(dir), { recursive: true });
     client = new PGlite(dir);
   }
-  const db = drizzlePglite(client, { schema });
-  await migratePglite(db, { migrationsFolder: MIGRATIONS });
+  const db = drizzle(client, { schema });
+  if (runMigrations) {
+    const { migrate } = await import("drizzle-orm/pglite/migrator");
+    await migrate(db, { migrationsFolder: MIGRATIONS });
+  }
   return { db: db as unknown as Db, close: () => client.close() };
 }

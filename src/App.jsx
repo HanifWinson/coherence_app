@@ -556,6 +556,10 @@ function AuthScreen({ notice, onDone }) {
   const [form, setForm] = useState({ practiceName: "", name: "", email: "", password: "" });
   const [error, setError] = useState(notice);
   const [busy, setBusy] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  useEffect(() => {
+    api("/config").then((c) => setRegistrationOpen(!!c.registrationOpen)).catch(() => {});
+  }, []);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
@@ -598,7 +602,9 @@ function AuthScreen({ notice, onDone }) {
         {error && <p className="warn" role="alert"><Icon d={ICONS.warn} size={13} /> {error}</p>}
         <button className="primary big" disabled={busy}>{busy ? "…" : mode === "signin" ? "Sign in" : "Create practice account"}</button>
         <p className="dim authswitch">
-          {mode === "signin"
+          {mode === "signin" && !registrationOpen
+            ? <>New practice? <a href="/landing.html#pilot">Join the pilot waitlist</a>. Staff accounts are created by your practice admin.</>
+            : mode === "signin"
             ? <>New practice? <button type="button" className="linkbtn" onClick={() => { setMode("register"); setError(null); }}>Register it</button>. Staff accounts are created by your practice admin.</>
             : <>Already registered? <button type="button" className="linkbtn" onClick={() => { setMode("signin"); setError(null); }}>Sign in</button>. You'll be the practice admin.</>}
         </p>
