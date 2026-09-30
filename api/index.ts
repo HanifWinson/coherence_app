@@ -1,6 +1,8 @@
 /*
- * Vercel function: every /api/* request lands here and goes to the same Hono
- * app the local server runs. Built once per function instance.
+ * Vercel function. vercel.json rewrites every /api/* path here - Vercel's
+ * file-based catch-alls only match one segment outside Next.js - and the
+ * request keeps its original URL, so Hono routes it exactly as the local
+ * server does. Built once per function instance.
  */
 import { buildApp } from "../server/runtime.js";
 

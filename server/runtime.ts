@@ -4,7 +4,7 @@ import { openDb } from "./db/index.js";
 
 /**
  * Environment checks and wiring shared by the long-running server (index.ts)
- * and the Vercel function (api/[[...route]].ts).
+ * and the Vercel function (api/index.ts).
  */
 export async function buildApp(opts: { serverless?: boolean } = {}) {
   const production = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";

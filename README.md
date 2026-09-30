@@ -21,7 +21,7 @@ No database to install: without `DATABASE_URL` the API uses embedded Postgres (P
 ## Deploy (Vercel)
 
 `vercel.json` deploys the app, the landing page and the API together, with functions in
-Sydney (`syd1`). `api/[[...route]].ts` runs the same Hono app as `server/index.ts`.
+Sydney (`syd1`). `api/index.ts` runs the same Hono app as `server/index.ts`; a rewrite sends every `/api/*` path to it.
 
 1. Import the GitHub repo into Vercel.
 2. Add Postgres from the Vercel Marketplace (Neon), region **AWS Sydney (ap-southeast-2)**.
