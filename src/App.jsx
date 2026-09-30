@@ -573,7 +573,14 @@ function AuthScreen({ notice, onDone }) {
   };
 
   return (
-    <section className="screen center">
+    <section className="screen authsplit">
+      <aside className="authpanel" aria-hidden="true">
+        <ScanBands />
+        <div className="authpanel-copy">
+          <p className="eyebrow">Confidence-first OCT triage</p>
+          <p className="authpanel-line">Calm where the model agrees.<br />Warm where a human should look.</p>
+        </div>
+      </aside>
       <form className="authcard" onSubmit={submit}>
         <p className="eyebrow">{mode === "signin" ? "Sign in" : "Register a practice"}</p>
         <h1>{mode === "signin" ? "Welcome back" : "Set up your practice"}</h1>
@@ -599,6 +606,28 @@ function AuthScreen({ notice, onDone }) {
     </section>
   );
 }
+
+/* The landing page's "uncertainty field", static: calm retinal bands, one warm
+   region. Decorative only - no motion, no third-party script on this page. */
+const ScanBands = () => (
+  <svg className="scanbands" viewBox="0 0 600 700" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <radialGradient id="sb-hot" cx="0.62" cy="0.52" r="0.34">
+        <stop offset="0" stopColor="#F0AA14" stopOpacity=".5" />
+        <stop offset=".4" stopColor="#C25200" stopOpacity=".3" />
+        <stop offset="1" stopColor="#C25200" stopOpacity="0" />
+      </radialGradient>
+    </defs>
+    <g fill="none" stroke="#B9C6D0" strokeLinecap="round">
+      {[[330, 3, .38], [352, 9, .16], [378, 4, .22], [404, 12, .12], [436, 3, .3], [458, 5, .45], [474, 6, .5], [494, 14, .1]]
+        .map(([y, w, o], i) => (
+          <path key={y} strokeWidth={w} strokeOpacity={o}
+            d={`M0 ${y} C180 ${y} 260 ${y} 300 ${y + 4} S360 ${y + 58 - i * 7} 390 ${y + 58 - i * 7} S470 ${y + 4} 520 ${y + 2} L600 ${y + 2}`} />
+        ))}
+    </g>
+    <rect width="600" height="700" fill="url(#sb-hot)" />
+  </svg>
+);
 
 /* Unlocking needs the password again: a shared front-desk machine must not
    hand the session to whoever touches the mouse next. */
@@ -737,7 +766,11 @@ function TriageScreen({ now, done, total }) {
         <p className="eyebrow">Triage in progress</p>
         <h1 className="mono bignum">{done} <span className="of">of {total}</span></h1>
         <p className="passline">20 passes · measuring disagreement</p>
-        <div className="fprog big"><div className="fprog-fill" style={{ width: `${(done / total) * 100}%` }} /></div>
+        <div className="passdots" aria-hidden="true">
+          {Array.from({ length: 20 }, (_, i) => <span key={i} style={{ animationDelay: `${i * 70}ms` }} />)}
+        </div>
+        <div className="fprog big" role="progressbar" aria-valuenow={done} aria-valuemin={0} aria-valuemax={total}
+          aria-label="Scans triaged"><div className="fprog-fill" style={{ width: `${(done / total) * 100}%` }} /></div>
         {now && <p className="mono dim nowfile">{now}</p>}
         <p className="dim smallnote">Where the twenty passes agree, we clear. Where they disagree everywhere,
           the capture is bad. Where they disagree in one place, a human should look — exactly there.</p>
@@ -757,9 +790,15 @@ function ReportScreen({ counts, list, agreePct, save, reopened, onRetrySave, onO
             ? `Saved report · ${reopened.createdAt.toLocaleString()} · engine ${reopened.engineVersion}`
             : "Report · read in five seconds"}
         </p>
-        <h1><span className="heronum mono">{notOpened}</span> scan{notOpened !== 1 ? "s" : ""} you did not have to open</h1>
-        <p className="lede">Cleared with high confidence — uncertainty confined to layer boundaries.
-          {agreePct !== null && <> &nbsp;·&nbsp; You've agreed with <strong>{agreePct}%</strong> of triage decisions this month.</>}</p>
+        {/* PRD §4: the scans-not-opened count is the headline, larger than anything else. */}
+        <div className="headline">
+          <span className="heronum mono">{notOpened}</span>
+          <div>
+            <h1>scan{notOpened !== 1 ? "s" : ""} you did not have to open</h1>
+            <p className="lede">Out of {counts.received} · cleared with high confidence, uncertainty confined to layer boundaries.</p>
+          </div>
+        </div>
+        {agreePct !== null && <p className="agree"><Icon d={ICONS.check} size={14} /> You've agreed with <strong>{agreePct}%</strong> of triage decisions this month.</p>}
       </div>
       {!reopened && <SaveStatus save={save} onRetry={onRetrySave} />}
       <div className="counters" role="group" aria-label="Batch summary">
@@ -771,7 +810,7 @@ function ReportScreen({ counts, list, agreePct, save, reopened, onRetrySave, onO
         ].map(([label, n, d]) => (
           <div key={label} className={`counter ${d ? "c-" + d : ""}`}>
             <span className="mono cnum">{n}</span>
-            <span className="clabel">{d ? <Chip decision={d} /> : label}</span>
+            <span className="clabel">{d ? <Chip decision={d} /> : <span className="rcv"><Icon d={ICONS.upload} size={13} /> {label}</span>}</span>
           </div>
         ))}
       </div>
@@ -784,13 +823,13 @@ function ReportScreen({ counts, list, agreePct, save, reopened, onRetrySave, onO
             <li key={r.caseId}>
               <button className={`wl-row ${r.clinician ? "signed" : ""}`} onClick={() => onOpen(r.caseId)}
                 aria-label={`Open case ${r.caseId}, ${r.decision}, confidence ${r.confidence}`}>
-                <span className="mono">{r.caseId}{r.synthetic && <span className="synthtag" title="Demo sample, not a real scan">SAMPLE</span>}</span>
-                <span className="latbadge">{r.laterality}</span>
-                <span className="confcell"><span className="mono">{r.confidence}</span><ConfBar v={r.confidence} /></span>
-                <span className={`shapecell s-${r.uncertaintyShape}`}><ShapeGlyph shape={r.uncertaintyShape} />
+                <span className="mono wl-case">{r.caseId}{r.synthetic && <span className="synthtag" title="Demo sample, not a real scan">SAMPLE</span>}</span>
+                <span className="wl-eye"><span className="latbadge">{r.laterality}</span></span>
+                <span className="confcell wl-conf"><span className="mono">{r.confidence}</span><ConfBar v={r.confidence} /></span>
+                <span className={`shapecell wl-shape s-${r.uncertaintyShape}`}><ShapeGlyph shape={r.uncertaintyShape} />
                   <span className="shapename">{r.uncertaintyShape}</span></span>
-                <span><Chip decision={r.decision} /></span>
-                <span className="dim nextcell">{r.clinician
+                <span className="wl-dec"><Chip decision={r.decision} /></span>
+                <span className="dim nextcell wl-next">{r.clinician
                   ? <span className="signedtag"><Icon d={ICONS.check} size={12} /> {r.clinician.action}</span>
                   : DECISION_META[r.decision].next}</span>
               </button>
@@ -1402,6 +1441,66 @@ select,textarea{border:1.5px solid var(--line);border-radius:8px;padding:8px 10p
   display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;
   padding:10px 16px;font-size:13px;z-index:45;text-align:center}
 .disclaimer strong{color:#fff}
+
+/* ---- report headline ---- */
+.headline{display:flex;align-items:center;gap:22px;margin-top:4px}
+.headline .heronum{font-size:clamp(64px,9vw,108px);line-height:.9;font-weight:600;color:var(--blue);letter-spacing:-.04em}
+.headline h1{margin:0 0 6px}
+.headline .lede{margin:0}
+.agree{display:inline-flex;gap:6px;align-items:center;margin:14px 0 0;font-size:14.5px;background:var(--blue-soft);color:var(--blue-ink);border-radius:99px;padding:5px 12px}
+.rcv{display:inline-flex;gap:5px;align-items:center}
+.savestate.ok{flex-wrap:nowrap;align-items:flex-start}
+.savestate.ok svg{flex-shrink:0;margin-top:4px}
+.counter,.worklist,.datum,.actions{box-shadow:0 1px 3px rgba(19,34,46,.05)}
+
+/* ---- worklist ---- */
+.wl-row{transition:background .12s}
+.wl-row:hover .wl-case{color:var(--blue-ink)}
+.wl-eye{display:flex}
+
+/* ---- upload + triage ---- */
+.dropzone{transition:border-color .15s,background .15s}
+.dropzone:hover,.dropzone:focus-visible{border-color:var(--blue);background:#FAFCFF}
+.fprog.big{background:var(--line)}
+.passdots{display:flex;gap:6px;justify-content:center;margin:18px 0 0}
+.passdots span{width:8px;height:8px;border-radius:50%;background:var(--orange);opacity:.2;animation:pass 1.4s ease-in-out infinite}
+@keyframes pass{0%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* ---- sign-in: split with the landing page's uncertainty field ---- */
+.screen.authsplit{display:grid;grid-template-columns:1fr 1fr;min-height:560px;max-width:980px;margin:8px auto 0;
+  background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 8px 30px rgba(19,34,46,.08)}
+.authpanel{position:relative;background:linear-gradient(180deg,#0A0F14,#13222E);color:#fff;min-height:420px}
+.scanbands{position:absolute;inset:0;width:100%;height:100%}
+.authpanel-copy{position:absolute;left:32px;right:32px;bottom:32px}
+.authpanel .eyebrow{color:#9CC0F5}
+.authpanel-line{font:700 26px/1.2 'Archivo',sans-serif;margin:0;text-shadow:0 1px 14px #0A0F14,0 0 4px #0A0F14}
+.authsplit .authcard{border:none;border-radius:0;align-self:center;justify-self:center;width:min(420px,100%);padding:40px 36px}
+
+@media(max-width:900px){.brand-tag{display:none}}
+@media(max-width:860px){
+  .wl-row{grid-template-columns:auto 1fr auto;grid-template-areas:"case eye dec" "conf conf shape" "next next next";gap:8px 12px;padding:14px 16px}
+  .wl-case{grid-area:case}.wl-eye{grid-area:eye}.wl-dec{grid-area:dec;justify-self:end}
+  .wl-conf{grid-area:conf}.wl-shape{grid-area:shape;justify-self:end}.wl-next{grid-area:next}
+  .wl-row.hist{grid-template-areas:none;grid-template-columns:1fr 1fr}
+}
+@media(max-width:760px){
+  .screen.authsplit{grid-template-columns:1fr;min-height:0}
+  .authpanel{min-height:190px}
+  .authpanel-line{font-size:19px}
+  .authpanel-copy{left:20px;right:20px;bottom:18px}
+  .authsplit .authcard{padding:26px 22px}
+}
+@media(max-width:640px){
+  .hdr{padding:10px 16px}
+  .hdr-right{gap:6px 14px;width:100%}
+  .whoami{flex-direction:row;gap:6px;text-align:left}
+  .whoami .rolelabel,.whoami .ahpra{display:none}
+  .hdr-right .ghostbtn{margin-left:auto}
+  .main{padding:20px 16px}
+  .headline{gap:14px}
+  .disclaimer{font-size:11.5px;padding:7px 12px;gap:2px 4px}
+  .app{padding-bottom:110px}
+}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 `}</style>

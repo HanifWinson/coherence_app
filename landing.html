@@ -29,6 +29,21 @@ header{display:flex;justify-content:space-between;align-items:center;padding:18p
 .btn:hover{background:var(--blue-ink)}
 .btn:disabled{opacity:.6;cursor:not-allowed}
 .hero{padding:48px 0 36px}
+.hero-stage{position:relative;overflow:hidden;background:linear-gradient(180deg,#0A0F14,#13222E);color:#fff;min-height:620px}
+.hero-scene{position:absolute;inset:0}
+.hero-scene>*{position:absolute;inset:0;width:100%;height:100%}
+.hero-inner{position:relative;z-index:1}
+.hero-stage .brand{color:#fff}
+.hero-stage .hero{padding:64px 0 88px;max-width:620px}
+.hero-stage .eyebrow{color:#9CC0F5}
+.hero-stage .lede{color:#C9D5DE}
+.hero-stage .lede strong{color:#fff}
+.btn-light{background:rgba(255,255,255,.1);border:1.5px solid rgba(255,255,255,.35)}
+.btn-light:hover{background:rgba(255,255,255,.2)}
+@media(max-width:640px){
+  .hero-stage{min-height:520px}
+  .hero-stage .hero{padding:140px 0 48px}
+}
 .eyebrow{font:600 13px 'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--blue-ink);margin:0 0 12px}
 h1{font:700 clamp(32px,5vw,52px)/1.08 'Archivo',sans-serif;letter-spacing:-.025em;margin:0 0 18px;max-width:20ch}
 .lede{color:var(--dim);font-size:19px;max-width:58ch;margin:0 0 26px}
@@ -67,16 +82,50 @@ footer strong{color:var(--ink)}
 </head>
 <body>
 <div class="devbar" role="note">In development · not yet available for clinical use · pilot waitlist open</div>
-<div class="wrap">
-  <header>
-    <a class="brand" href="#top" aria-label="Coherence">
-      <svg width="42" height="16" viewBox="0 0 42 16" aria-hidden="true"><path d="M2 13 H14 C17 13 18 3 21 3 C24 3 25 13 28 13 H40" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
-      Coherence
-    </a>
-    <a class="btn" href="#pilot">Join the pilot</a>
-  </header>
 
-  <main id="top">
+<!-- Hero stage. The Unicorn Studio scene (design/unicorn-hero-brief.md) mounts into
+     #hero-scene; until then, and whenever motion is reduced or WebGL fails, the static
+     SVG below is what people see. -->
+<div class="hero-stage" id="top">
+  <div class="hero-scene" id="hero-scene" aria-hidden="true">
+    <svg class="scene-fallback" viewBox="0 0 1600 620" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <radialGradient id="hot" cx="0.74" cy="0.5" r="0.3">
+          <stop offset="0" stop-color="#F0AA14" stop-opacity=".55" />
+          <stop offset=".35" stop-color="#C25200" stop-opacity=".35" />
+          <stop offset="1" stop-color="#C25200" stop-opacity="0" />
+        </radialGradient>
+        <linearGradient id="fadeL" x1="0" x2="1">
+          <stop offset="0" stop-color="#0A0F14" stop-opacity=".95" />
+          <stop offset=".5" stop-color="#0A0F14" stop-opacity=".55" />
+          <stop offset="1" stop-color="#0A0F14" stop-opacity="0" />
+        </linearGradient>
+        <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" /><feColorMatrix values="0 0 0 0 .72  0 0 0 0 .78  0 0 0 0 .82  0 0 0 .06 0" /></filter>
+      </defs>
+      <g fill="none" stroke="#B9C6D0" stroke-linecap="round">
+        <path d="M0 250 C500 250 900 250 1050 256 S1180 318 1250 318 S1380 256 1500 254 L1600 254" stroke-opacity=".38" stroke-width="3" />
+        <path d="M0 272 C500 272 900 272 1050 278 S1180 330 1250 330 S1380 278 1500 276 L1600 276" stroke-opacity=".16" stroke-width="9" />
+        <path d="M0 300 C500 300 900 300 1050 305 S1180 346 1250 346 S1380 305 1500 303 L1600 303" stroke-opacity=".22" stroke-width="4" />
+        <path d="M0 330 C500 330 900 330 1060 334 S1180 362 1250 362 S1380 334 1500 332 L1600 332" stroke-opacity=".12" stroke-width="12" />
+        <path d="M0 368 C600 368 1000 368 1100 370 S1200 384 1250 384 S1360 370 1500 369 L1600 369" stroke-opacity=".3" stroke-width="3" />
+        <path d="M0 392 C600 392 1600 392 1600 392" stroke-opacity=".45" stroke-width="5" />
+        <path d="M0 408 C600 408 1600 408 1600 408" stroke-opacity=".5" stroke-width="6" />
+        <path d="M0 428 C600 428 1600 428 1600 428" stroke-opacity=".1" stroke-width="14" />
+      </g>
+      <rect width="1600" height="620" fill="url(#hot)" />
+      <rect width="1600" height="620" filter="url(#grain)" />
+      <rect width="1000" height="620" fill="url(#fadeL)" />
+    </svg>
+  </div>
+
+  <div class="wrap hero-inner">
+    <header>
+      <a class="brand" href="#top" aria-label="Coherence">
+        <svg width="42" height="16" viewBox="0 0 42 16" aria-hidden="true"><path d="M2 13 H14 C17 13 18 3 21 3 C24 3 25 13 28 13 H40" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+        Coherence
+      </a>
+      <a class="btn btn-light" href="#pilot">Join the pilot</a>
+    </header>
     <div class="hero">
       <p class="eyebrow">OCT triage for optometry practices</p>
       <h1>Only open the scans that need a human.</h1>
@@ -85,6 +134,11 @@ footer strong{color:var(--ink)}
         and bad captures get retaken while the patient is still in the chair.</p>
       <a class="btn" href="#pilot">Register interest for the pilot</a>
     </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <main>
 
     <section aria-labelledby="how">
       <h2 id="how">Three outcomes, decided by where the AI is unsure</h2>
